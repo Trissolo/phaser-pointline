@@ -1,7 +1,7 @@
 # phaser-pointline
 A simple movement / physics system built for Phaser 3 based on points and lines
 
-Usage: Simple instantiate the object at the start of your framework. For Debug drawingt to work correctly, the graphics object must be created at the end of your create() function:
+Usage: Simply instantiate the object at the start of your create() function. For Debug drawing to work correctly, the graphics object must be created at the end of your create() function:
 
 ```
 create(){
@@ -13,3 +13,5 @@ create(){
    
    this.pointLine.gfx = this.add.graphics();
 }
+
+```
