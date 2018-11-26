@@ -16,6 +16,7 @@ class Player {
 				//direction
 					this.yInit = y;
 					this.xInit = x;
+					this.origin = {x:0.5, y:1};
 					this.absVelX = 0;
 					this.absVelY = 0;
 					this.maxVelX = 80;
@@ -26,6 +27,8 @@ class Player {
 					this.previousFacing = true;
 				
 				//jumping & hopping
+					this.hopOrigin = {x:0.5, y:0.5};
+					this.hopSpineOffset = 8;
 					this.jumpVel = -300;
 					this.gravityMulti = 2.5;
 					this.terminalVel = 250;
@@ -69,8 +72,11 @@ class Player {
 					2.5, 				//wdith / 2 of bounding box
 					'player', 		//which sprite from loaded adssets
 					0, 				//X offset of body point
-					8				//y offset of body point
+					0				//y offset of body point
 				);
+				
+			//set origin
+				this.resetOrigin();
 				
 			//animations
 				this.scene.anims.create({
@@ -94,8 +100,8 @@ class Player {
 			
 				this.scene.anims.create({
 					key: 'ball',
-					frames: [ { key: 'player', frame: 2 } ],
-					frameRate: 1
+					frames: [ {key: "player", frame: 4},{key: "player", frame: 5},{key: "player", frame: 6},{key: "player", frame: 7} ],
+					frameRate: 30
 				});
 				
 			return false;
@@ -216,6 +222,14 @@ class Player {
 				
 				return false
 				
+			}
+			
+			resetOrigin(){
+				this.sprite.setOrigin(this.origin.x,this.origin.y);	//reset origin
+			}
+			
+			resetAngle(){
+				this.sprite.angle = 0;
 			}
 		
 	//end movement functions
@@ -347,8 +361,6 @@ class Player {
 					//on ground / platform
 						if(this.sprite.body.onGround){
 							
-							this.sprite.angle = 0; //ensure right way up
-							
 							if(this.absVelX > 0 && (this.cursors.left.isDown || this.cursors.right.isDown)){
 								this.sprite.anims.play('run', true);
 							} else {
@@ -359,38 +371,24 @@ class Player {
 						
 					//in air	
 						else {
+							
+							this.resetAngle();
 						
 							if(this.sprite.body.hanging){
 								
-								//reset angle if in middle of spin and hit wall
-									this.sprite.angle = 0;
 									this.hopSpinning = false;
 								//play hanging anim
 									this.sprite.anims.play('jump', true);
 								
 							} else if(this.hopping == true){
 								
-								//if the current angle is one step behind returning to 0 (depending on facing), then stop the spin
-									if(((this.sprite.angle == -30 && this.facing) || (this.sprite.angle == 30 && !this.facing)) && this.hopSpinning){
-										
-										this.sprite.angle = 0;
-										this.hopSpinning = false;
-									}
-									
-								//otherwise, continue spin.
-									else if(this.hopSpinning) {
-										this.sprite.angle += 30*this.sprite.body.dirAdj;
-									}
-								
-								//play ball anim until not spinning any more
-									if(this.hopSpinning == true){
-										this.sprite.anims.play('ball', true);
-									} else {
-										this.sprite.anims.play('jump', true);
-									}
+								//play ball anim until landed
+									this.sprite.anims.play('ball', true);
 								
 							} else {
+								
 								this.sprite.anims.play('jump', true);
+								
 							}
 							
 						}
