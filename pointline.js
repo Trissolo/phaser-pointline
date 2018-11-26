@@ -71,20 +71,20 @@ class Pointline{
 				var sprite = this.scene.add.sprite(x, y, spriteSelector);		
 				
 				sprite.body = {
-					velocity : {x:x,y:y},
-					width : width,
-					dirAdj : 1,
-					gravityFactor : 1,
-					pointOffset : {x:offSetX, y:offSetY},
-					onGround : false,
-					onPlatform: false,
-					platformIndex : 0,
-					onWall : false,
-					onStickyWall:false,
-					hanging:false,
-					m : 0,
-					b : 0,
-					velMult : 1
+					velocity : {x:0,y:0},					//body velocity
+					width : width,							//width / 2 of body bounds
+					dirAdj : 1,								//left or right X
+					gravityFactor : 1,						//for scaling gravity for this body
+					pointOffset : {x:offSetX, y:offSetY},	//where is the "point" in relation to the origin of the sprite
+					onGround : false,						//on a ground / slope / platform
+					onPlatform: false,						//on a platform specifically
+					platformIndex : 0,						//which platform? For movement
+					onWall : false,							//on a wall?
+					onStickyWall:false,						//on a sticky wall, for wall jumping..
+					hanging:false,							//currently hanging on a sticky wall
+					m : 0,									//the m in y=mx+b 
+					b : 0,									//the b in y=mx+b
+					velMult : 1								//velocity multiplier
 				};
 				
 				this.dynamicObjects.push(sprite);
@@ -116,41 +116,68 @@ class Pointline{
 					//flat line horizontal
 					case 'ground':				//type 1
 					case 'platform':			//type 4
-					
-						if(typeof config.length == 'undefined'){ console.log('missing length parameter'); return null; }
-						
-						if(typeof config.checkDirections.checkUp == 'undefined'){ config.checkDirections.checkUp = true; }
-						if(typeof config.checkDirections.checkDown == 'undefined'){ config.checkDirections.checkDown = false; }
-						if(typeof config.velMult == 'undefined'){ config.velMult = 1; }
+
+						//check for default 
+							if(typeof config.length == 'undefined'){ console.log('missing length parameter'); return null; }
+							if(typeof config.checkDirections.checkUp == 'undefined'){ config.checkDirections.checkUp = true; }
+							if(typeof config.checkDirections.checkDown == 'undefined'){ config.checkDirections.checkDown = false; }
+							if(typeof config.velMult == 'undefined'){ config.velMult = 1; }
 						
 						//platform specific
-						if(typeof config.destinations == 'undefined'){ config.destinations = {x1:0, x2:0}; }
-						if(typeof config.velocity == 'undefined'){ config.velocity = 0; }
-						if(typeof config.facing == 'undefined'){ config.facing = true; }
+							if(typeof config.destinations == 'undefined'){ config.destinations = {x1:0,y1:0, x2:0, y2:0}; }
+							if(typeof config.velocity == 'undefined'){ config.velocity = 0; }
+							if(typeof config.facing == 'undefined'){ config.facing = true; }
 						
-						var line = new Phaser.Geom.Line(config.coords.x1, config.coords.y1, config.coords.x1+config.length, config.coords.y1);
+						//make line
+							var line = new Phaser.Geom.Line(config.coords.x1, config.coords.y1, config.coords.x1+config.length, config.coords.y1);
 						
-						line.m = 0;						//needed for straight line
-						line.b = config.coords.y1;		//needed for straight line
-						line.checkUp = config.checkDirections.checkUp;
-						line.checkDown = config.checkDirections.checkDown;
-						line.velMult = config.velMult;
-						line.type = (config.type == 'ground') ? 1 : 4;
+						//define slope, b and angle
+							line.m = 0;						//needed for straight line
+							line.b = config.coords.y1;		//needed for straight line
+							line.angle = 0;					//needed for straight line
 						
-						if(config.type == 'platform'){
-							//origin half way up line
-							line.origin = {x:config.coords.x1+(config.length/2), y:config.coords.y1};
-							line.destinations = {x1:config.destinations.x1, x2:config.destinations.x2};
-							line.velocity = config.velocity;												//speed of platform movement
-							line.facing = config.facing;													//which way is the initial facing of platform (true = right)
-							line.dirAdj = (line.facing) ? 1 : -1;											//used as multiplier for velocity
-							line.deltaX = 0;																//in update, the move this platform made this frame
-							line.deltaY = 0;
-						}
+						//write properties
+							line.checkUp = config.checkDirections.checkUp;
+							line.checkDown = config.checkDirections.checkDown;
+							line.velMult = config.velMult;
+							line.type = (config.type == 'ground') ? 1 : 4;
 						
-						if(config.type == 'platform'){
-							this.platforms.push(line);
-						}
+						//platforms properties
+							if(config.type == 'platform'){
+								//origin half way up line
+								line.origin = {x:config.coords.x1+(config.length/2), y:config.coords.y1};
+								line.facing = config.facing;													//which way is the initial facing of platform (true = right)
+								line.dirAdj = (line.facing) ? 1 : -1;											//used as multiplier for velocity
+								line.deltaX = 0;																//in update, the move this platform made this frame
+								line.deltaY = 0;
+								line.path = {vert:false, b:0, m:0};
+								
+								line.destinations = {x1:config.destinations.x1, y1:config.destinations.y1, x2:config.destinations.x2, y2:config.destinations.y2};
+								
+								//work out line equation
+								//flat path line
+								if(line.destinations.y1 == line.destinations.y2){
+									line.path.b = line.destinations.y1;
+									line.path.m = 0;
+								} else if (line.destinations.x1 == line.destinations.x2){
+									line.path.vert = true;
+								} else {
+									
+									//whats the slope?
+										line.path.m = (line.destinations.y1 - line.destinations.y2) / (line.destinations.x1 - line.destinations.x2);
+									
+									//b = y - mx
+										line.path.b = line.destinations.y1 - (line.path.m*line.destinations.x1);
+									
+								}
+								line.destinations = {x1:config.destinations.x1, y1:config.destinations.y1, x2:config.destinations.x2, y2:config.destinations.y2};
+								line.velocity = config.velocity;												//speed of platform movement X
+								
+							}
+							
+							if(config.type == 'platform'){
+								this.platforms.push(line);
+							}
 						
 						if(this.debug == true){
 							if(config.type == 'ground'){
@@ -169,31 +196,43 @@ class Pointline{
 					
 						//swap over points if right point given first.
 						// x1 further to right than x2
-						if(config.coords.x1 > config.coords.x2){
-							
-							let first = {x:config.coords.x1,y:config.coords.y1};
-							config.coords.x1 = config.coords.x2;
-							config.coords.y1 = config.coords.y2;
-							config.coords.x2 = first.x;
-							config.coords.y2 = first.y;
-							
-						}
+							if(config.coords.x1 > config.coords.x2){
+								
+								let first = {x:config.coords.x1,y:config.coords.y1};
+								config.coords.x1 = config.coords.x2;
+								config.coords.y1 = config.coords.y2;
+								config.coords.x2 = first.x;
+								config.coords.y2 = first.y;
+								
+							}
 						
-						if(typeof config.checkDirections.checkUp == 'undefined'){ config.checkDirections.checkUp = true; }
-						if(typeof config.checkDirections.checkDown == 'undefined'){ config.checkDirections.checkDown = false; }
-						if(typeof config.checkDirections.velMult == 'undefined'){ config.checkDirections.velMult = 1; }
+						//check for defaults
+							if(typeof config.checkDirections.checkUp == 'undefined'){ config.checkDirections.checkUp = true; }
+							if(typeof config.checkDirections.checkDown == 'undefined'){ config.checkDirections.checkDown = false; }
+							if(typeof config.velMult == 'undefined'){ config.velMult = 1; }
 						
-						var line = new Phaser.Geom.Line(config.coords.x1, config.coords.y1, config.coords.x2, config.coords.y2);
+						//make line
+							var line = new Phaser.Geom.Line(config.coords.x1, config.coords.y1, config.coords.x2, config.coords.y2);
 						
-						line.m = (config.coords.y1 - config.coords.y2) / (config.coords.x1 - config.coords.x2);
+						//whats the slope?
+							line.m = (config.coords.y1 - config.coords.y2) / (config.coords.x1 - config.coords.x2);
 						
-						//use known
 						//b = y - mx
-						line.b = config.coords.y1 - (line.m*config.coords.x1);
-						line.checkUp = config.checkDirections.checkUp;
-						line.checkDown = config.checkDirections.checkDown;
-						line.velMult = config.checkDirections.velMult;
-						line.type = 2;
+							line.b = config.coords.y1 - (line.m*config.coords.x1);
+							
+						//write properties
+							line.checkUp = config.checkDirections.checkUp;
+							line.checkDown = config.checkDirections.checkDown;
+							line.velMult = config.velMult;
+							line.type = 2;
+						
+						//work out slope angle - toa
+							let adjacent = Math.abs(line.x2) - Math.abs(line.x1);
+							let opposite = Math.abs(line.y2) - Math.abs(line.y1);
+							let theta = opposite/adjacent;								//tan(theta)
+							theta = Math.atan(theta);									//atan(theta) in rads
+							theta *= 180 / Math.PI;										//convert to degrees							
+							line.angle = theta*-1;										//set for this coord system
 						
 						if(this.debug == true){
 							this.staticObjects.slopes.push(line);
@@ -316,52 +355,115 @@ class Pointline{
 						let plat = this.platforms[i];
 						
 						//first apply movement
-						let thisMove = plat.velocity*delta*plat.dirAdj;
+							let thisMove = plat.velocity*delta*plat.dirAdj;
+							
+						if (plat.path.vert == true){
 						
-						//does this take us past a destination?
-						if(
-							plat.facing &&
-							(plat.origin.x + thisMove) >= plat.destinations.x2
-						){
+							plat.deltaX = 0;													//x always 0 on vertical line
 							
-							//about turn
-							plat.facing = !plat.facing;
-							plat.dirAdj *= -1;
-							
-							//work out diff and apply to line bounds
-							plat.deltaX = plat.destinations.x2 - plat.origin.x; //destination - CURRENT origin x
-							
-							plat.x1 += plat.deltaX;
-							plat.x2 += plat.deltaX;
-							plat.origin.x = plat.destinations.x2;
-							
-						} else if(
-							!plat.facing &&
-							(plat.origin.x + thisMove) <= plat.destinations.x1
-						){
-							
-							//about turn
-							plat.facing = !plat.facing;
-							plat.dirAdj *= -1;
-							
-							//work out diff and apply to line bounds
-							plat.deltaX = plat.destinations.x1 - plat.origin.x; //destination - CURRENT origin x
-							
-							plat.x1 += plat.deltaX;
-							plat.x2 += plat.deltaX;
-							plat.origin.x = plat.destinations.x1;
-							
+							//positive facing = down
+							//does this take us past a destination?
+								if(
+									plat.facing &&												//true facin
+									(plat.origin.y + thisMove) >= plat.destinations.y1			//first point the bottom point
+								){
+									
+									//about turn
+										plat.facing = !plat.facing;
+										plat.dirAdj *= -1;
+									
+									//work out diff and apply to line bounds
+										plat.deltaY = plat.destinations.y1 - plat.origin.y; 	//destination - CURRENT origin y
+										
+										plat.y1 += plat.destinations.y1;						//move y's to y1
+										plat.y2 += plat.destinations.y1;						//move y's to y1
+										plat.origin.y = plat.destinations.y1;					//move y's to y1
+									
+								} else if(
+									!plat.facing &&
+									(plat.origin.y + thisMove) <= plat.destinations.y2			//second point the top point
+								){
+									
+									//about turn
+										plat.facing = !plat.facing;
+										plat.dirAdj *= -1;
+									
+									//work out diff and apply to line bounds
+										plat.deltaY = plat.destinations.y2 - plat.origin.y; 	//destination - CURRENT origin y
+										
+										plat.y1 += plat.deltaX;									//move  y'2 to y2
+										plat.y2 += plat.deltaX;									//move  y'2 to y2
+										plat.origin.y = plat.destinations.y2;					//move  y'2 to y2
+									
+								} else {
+									//move normally
+										plat.deltaY = thisMove;									//move this delta
+										plat.y1 += thisMove;									//move y's
+										plat.y2 += thisMove;
+										plat.origin.y += thisMove;
+								}
+								
 						} else {
 							
-							//move normally
-							plat.deltaX = thisMove;
-							plat.x1 += thisMove;
-							plat.x2 += thisMove;
-							plat.origin.x += thisMove;
+							//does this take us past a destination?
+								if(
+									plat.facing &&
+									(plat.origin.x + thisMove) >= plat.destinations.x2			//x2 right side point
+								){
+									
+									//about turn
+										plat.facing = !plat.facing;
+										plat.dirAdj *= -1;
+									
+									//work out diff and apply to line bounds
+										plat.deltaX = plat.destinations.x2 - plat.origin.x; 	//destination - CURRENT origin x
+										
+										plat.x1 += plat.deltaX;									//move the line bounds x's
+										plat.x2 += plat.deltaX;									//move the line bounds x's
+										plat.origin.x = plat.destinations.x2;					//move origing to that bound x
+										let oldY = plat.origin.y;								//where were the y points
+										plat.origin.y = plat.destinations.y2;					//where are they now
+										plat.deltaY = plat.origin.y - oldY;						//move by that amount
+										plat.y1 += plat.deltaY;									//move by that amount
+										plat.y2 += plat.deltaY;									//move by that amount
+									
+								} else if(
+									!plat.facing &&
+									(plat.origin.x + thisMove) <= plat.destinations.x1			//x1 left side point
+								){
+									
+									//about turn
+										plat.facing = !plat.facing;
+										plat.dirAdj *= -1;
+									
+									//work out diff and apply to line bounds
+										plat.deltaX = plat.destinations.x1 - plat.origin.x; //destination - CURRENT origin x
+										
+										plat.x1 += plat.deltaX;
+										plat.x2 += plat.deltaX;
+										plat.origin.x = plat.destinations.x1;
+										let oldY = plat.origin.y;
+										plat.origin.y = plat.destinations.y1;
+										plat.deltaY = plat.origin.y - oldY;
+										plat.y1 += plat.deltaY;
+										plat.y2 += plat.deltaY;
+									
+								} else {
+									
+									//move normally
+										plat.deltaX = thisMove;
+										plat.x1 += thisMove;
+										plat.x2 += thisMove;
+										plat.origin.x += thisMove;
+										let oldY = plat.origin.y;
+										plat.origin.y = (plat.path.m*plat.origin.x) + plat.path.b;
+										plat.deltaY = plat.origin.y - oldY;
+										plat.y1 += plat.deltaY;
+										plat.y2 += plat.deltaY;
+									
+								}
 							
 						}
-						
-						plat.deltaY = 0;
 						
 					}
 			
@@ -370,26 +472,29 @@ class Pointline{
 						
 						let obj = this.dynamicObjects[i];
 						
-						//first move X and Y to new location WITH platform
+						//first move X and Y to new location WITH platform, if on one.
 						if(obj.body.onPlatform){
 							let key = obj.body.platformIndex.key;
 							let index = obj.body.platformIndex.index;
 							let plat = this.colliders[key].groundSlopes[index];
 							obj.x += plat.deltaX;
 							obj.y += plat.deltaY;
+							obj.angle = obj.body.angle;
 						}
 							
 						//first make horizontal movement
 						obj.x += (obj.body.velocity.x == 0) ? 0 : (obj.body.velocity.x*delta*obj.body.velMult);
-												
-						if(obj.body.onGround === true){
+						
+						//platforms can't be slopes...yet
+						if(obj.body.onGround && !obj.body.onPlatform){
 							
 							//use m and b values set by current ground
 							//essentially y=mx+b;
 							obj.y = (obj.x*obj.body.m) + obj.body.b - obj.body.pointOffset.y;
+							obj.angle = obj.body.angle;
 							
-							
-						} else if (obj.body.hanging === false) {
+						//if you're not hanging, not on a platform and not on the ground...then you're in the air!
+						} else if (!obj.body.hanging) {
 							
 							//apply gravity to velocity
 							obj.body.velocity.y += this.gravity*obj.body.gravityFactor;
@@ -531,6 +636,7 @@ class Pointline{
 											
 											dyn.body.m = stat.m;
 											dyn.body.b = stat.b;
+											dyn.body.angle = stat.angle;
 											dyn.body.velMult = stat.velMult;									//set the current line equation from the line the player is on
 											
 											//y = dyn.x*m + b
@@ -590,6 +696,7 @@ class Pointline{
 											//set the current line equation from the line the player is on
 											dyn.body.m = stat.m;
 											dyn.body.b = stat.b;
+											dyn.body.angle = stat.angle;
 											dyn.body.velMult = stat.velMult;
 											
 											//y = dyn.x*m + b
@@ -642,6 +749,7 @@ class Pointline{
 									(stat.y1 > cam.camBottomBorderY && stat.y2 > cam.camBottomBorderY) ||		//Wall off screen downwards
 									dynPointY > stat.y1 || 														//Dynamic Object below wall
 									dynPointY < stat.y2 ||														//Dynamic Object above wall
+									(dynPointY == stat.y2 && dyn.body.onGround) ||
 									(stat.checkLeft === false && stat.checkRight === false)	||					//ground line isn't checking either direction
 									(dyn.body.velocity.x > 0 && stat.checkLeft === false) ||					//dyn moving right, line isn't checking left
 									(dyn.body.velocity.x < 0 && stat.checkRight === false)						//dyn moving left, line isn't checking right
