@@ -4,15 +4,19 @@ class Player {
 	* Initialise class properties
 	* @return false
 	*/
-		constructor(x, y, scene, cursors, physics)
+		constructor(x, y, scene)
 		{
 			
 			//game utilities
 				this.scene = scene;			//by ref
-				this.cursors = cursors;		//by ref
-				this.physics = physics;		//by ref
+				this.cursors = this.scene.cursors;		//by ref
+				this.pointline = this.scene.pointline;		//by ref
 			
 			//player properties
+				
+				//global switches
+					this.hopSwitch = false;
+			
 				//direction
 					this.yInit = y;
 					this.xInit = x;
@@ -66,14 +70,27 @@ class Player {
 		{
 			
 			//add sprite to physics
-				this.sprite = this.physics.addSprite(
-					this.xInit,  	//initial world X value
-					this.yInit, 	//initial word y value
-					2.5, 				//wdith / 2 of bounding box
-					'player', 		//which sprite from loaded adssets
-					0, 				//X offset of body point
-					0				//y offset of body point
-				);
+				
+				this.sprite = this.pointline.addSprite({
+					spriteSelector:'player',
+					x:this.xInit,
+					y:this.yInit,
+					canMove : true,										//are we applying movement to this body?
+					velocity : {x:0,y:0},								//body velocity
+					width : 2.5,										//width / 2 of body bounds
+					dirAdj : 1,											//left or right X
+					gravityFactor : 1,									//for scaling gravity for this body
+					pointOffset : {x:0, y:0},							//where is the "point" in relation to the origin of the sprite
+					onGround : false,									//on a ground / slope / platform
+					onPlatform: false,									//on a platform specifically
+					platformIndex : 0,									//which platform? For movement
+					onWall : false,										//on a wall?
+					onStickyWall:false,									//on a sticky wall, for wall jumping..
+					hanging:false,										//currently hanging on a sticky wall
+					m : 0,												//the m in y=mx+b 
+					b : 0,												//the b in y=mx+b
+					velMult : 1											//velocity multiplier
+				});
 				
 			//set origin
 				this.resetOrigin();
@@ -82,7 +99,7 @@ class Player {
 				this.scene.anims.create({
 					key: 'run',
 					frames: [{key: "player", frame: 1},{key: "player", frame: 0}], //1 first so run frame is always first seen
-					frameRate: 12,
+					frameRate: 9,
 					repeat: -1
 				});
 
@@ -101,7 +118,7 @@ class Player {
 				this.scene.anims.create({
 					key: 'ball',
 					frames: [ {key: "player", frame: 4},{key: "player", frame: 5},{key: "player", frame: 6},{key: "player", frame: 7} ],
-					frameRate: 30
+					frameRate: 24
 				});
 				
 			return false;
@@ -212,7 +229,7 @@ class Player {
 			changeFacing(leftRight)
 			{
 				
-				this.facing = leftRight;							//facing
+				this.facing = leftRight;										//facing
 				this.sprite.body.dirAdj = (this.facing === true) ? 1 : -1; 		//set Dir for subsequent potential operations
 				
 				//flip the X offset of point if x offset not 0
@@ -225,7 +242,7 @@ class Player {
 			}
 			
 			resetOrigin(){
-				this.sprite.setOrigin(this.origin.x,this.origin.y);	//reset origin
+				this.sprite.setOrigin(this.origin.x,this.origin.y);				//reset origin
 			}
 			
 			resetAngle(){
@@ -295,6 +312,7 @@ class Player {
 						
 						//hop
 							if (
+								this.hopSwitch &&									//global hop switch
 								this.cursors.up.isDown && 							//up key pressed
 								(this.jumping || this.sprite.body.hanging) && 		//already jumping / or hanging
 								(!this.hopping || this.sprite.body.hanging) &&		//not already hopping, except when hanging
