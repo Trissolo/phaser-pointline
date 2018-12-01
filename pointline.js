@@ -43,7 +43,8 @@ class Pointline{
 					y:0,												//initial y position
 					canMove : true,										//are we applying movement to this body?
 					velocity : {x:0,y:0},								//body velocity
-					width : 0,											//width / 2 of body bounds
+					radius : 0,											//width / 2 of body bounds
+					height: 0,
 					dirAdj : 1,											//left or right X
 					gravityFactor : 1,									//for scaling gravity for this body
 					pointOffset : {x:0, y:0},							//where is the "point" in relation to the origin of the sprite
@@ -55,27 +56,32 @@ class Pointline{
 					hanging:false,										//currently hanging on a sticky wall
 					m : 0,												//the m in y=mx+b 
 					b : 0,												//the b in y=mx+b
-					velMult : 1											//velocity multiplier
+					velMult : 1,										//velocity multiplier
+					breakOnOverlap :false,								//on overlap do we stop checking for overlaps?
+					overlapCallback: false								//the callback function itself
 				}
 				
 				this.lineDefaults = {
-					type: 'ground',
-					coords: { x1:0, y1:0, x2:0, y2:0 },
-					destinations: { x1:0, y1:0, x2:0, y2:0 },
-					facing:true,
-					checkDirections: {
-						checkUp:false,
-						checkDown:false,
-						checkLeft:false,
-						checkRight:false
+					type: 'ground',										//type of line
+					coords: { x1:0, y1:0, x2:0, y2:0 },					//bound points of line
+					destinations: { x1:0, y1:0, x2:0, y2:0 },			//for platforms, from where - to does the platform move?
+					facing:true,										//for platforms, which direction does the movement start in? true = right
+					checkDirections: {									//for collisions, which directions are we checking?
+						checkUp:false,									//ground, slopes, platforms
+						checkDown:false,								//ground, slopes, platforms
+						checkLeft:false,								//walls
+						checkRight:false								//walls
 					},
-					velMult:1,
-					velocity:0,
-					length:0,
-					height:0,
-					sticky:false,
-					callback:false,
-					pause:0
+					velMult:1,											//when on ground, slope or platform is the velocity increased?
+					velocity:0,											//for platforms, what x velocity does this platforms move at?
+					length:0,											//length of ground or platform
+					height:0,											//height of wall
+					sticky:false,										//is the wall sticky?
+					callback:false,										//collision callback
+					isOverlapper:false,									//Does this line act as a trigger? i.e. with callback on collision
+					pause:0,											//for platforms, do they pause at the bounds of the movement line, if so how long?
+					isPaused:false,										//does the platform start paused?
+					pauseUntil:0										//for pause counter
 				}
 			
 			return false;
@@ -147,7 +153,8 @@ class Pointline{
 						x:config.velocity.x || dyn.velocity.x,
 						y:config.velocity.y || dyn.velocity.y
 					},											
-					width : config.width || dyn.width,								//width / 2 of body bounds
+					radius : config.radius || dyn.radius,							//width / 2 of body bounds
+					height: config.height || dyn.height,							//height of body bounds
 					dirAdj : config.dirAdj || dyn.dirAdj,							//left or right X
 					gravityFactor : config.gravityFactor || dyn.gravityFactor,		//for scaling gravity for this body
 					pointOffset : {													//where is the "point" in relation to the origin of the sprite
@@ -163,6 +170,8 @@ class Pointline{
 					m : config.m || dyn.m,											//the m in y=mx+b 
 					b : config.b || dyn.b,											//the b in y=mx+b
 					velMult : config.velMult || dyn.velMult,						//velocity multiplier
+					breakOnOverlap : config.breakOnOverlap || dyn.breakOnOverlap,	//on overlap do we stop checking for overlaps?
+					overlapCallback: config.overlapCallback || dyn.overlapCallback,	//the callback function itself
 				};
 				
 				//add to the dynamic objects movement array
@@ -225,6 +234,7 @@ class Pointline{
 							line.b = coords.y1;																	//needed for straight line
 							line.angle = 0;																		//needed for straight line
 							line.callback = config.callback || defaults.callback;
+							line.isOverlapper = config.isOverlapper || defaults.isOverlapper;
 						
 						//platforms properties
 							if(config.type == 'platform'){
@@ -309,6 +319,7 @@ class Pointline{
 							line.velMult = config.velMult || defaults.velMult;
 							line.type = 2;
 							line.callback = config.callback || defaults.callback;
+							line.isOverlapper = config.isOverlapper || defaults.isOverlapper;
 						
 						//work out slope angle - toa
 							let adjacent = Math.abs(line.x2) - Math.abs(line.x1);
@@ -336,6 +347,8 @@ class Pointline{
 						line.checkRight = config.checkDirections.checkRight || defaults.checkDirections.checkRight;
 						line.sticky = config.sticky || defaults.sticky;
 						line.type = 3;
+						line.callback = config.callback || defaults.callback;
+						line.isOverlapper = config.isOverlapper || defaults.isOverlapper;
 						
 						if(this.debug == true){
 							if(line.sticky){
@@ -363,8 +376,7 @@ class Pointline{
 				this.colliders[name] = {
 					dynamic:dynamic, 		//the dynamic body
 					walls:[],				
-					groundSlopes:[], 		//including platforms
-					otherDynamic:[]
+					groundSlopes:[] 		//including platforms
 				};
 				
 				return false;
@@ -424,9 +436,7 @@ class Pointline{
 			addOverlapper(name, dynamic){
 				
 				this.overlappers[name] = {
-					dynamic:dynamic, 		//the dynamic body
-					walls:[],				
-					groundSlopes:[], 		//including platforms
+					dynamic:dynamic,
 					otherDynamic:[]
 				};
 				
@@ -444,35 +454,12 @@ class Pointline{
 				if(objects.constructor === Array){
 					
 					for(var i = 0; i < objects.length; i++){
-						switch(objects[i].type){
-							
-							case 1:
-							case 2:
-							case 4:
-								this.colliders[name].groundSlopes.push(objects[i]);
-							break;
-							case 3:
-								this.colliders[name].walls.push(objects[i]);
-							break;
-							
-						}
-						
+						this.overlappers[name].otherDynamic.push(objects[i]);
 					}
 					
 				} else {
 				
-					switch(objects[i].type){
-							
-						case 1:
-						case 2:
-						case 4:
-							this.colliders[name].groundSlopes.push(objects);
-						break;
-						case 3:
-							this.colliders[name].walls.push(objects);
-						break;
-						
-					}
+					this.overlappers[name].otherDynamic.push(objects);
 					
 				}
 				
@@ -491,7 +478,11 @@ class Pointline{
 				delta = delta*0.001;
 				
 			//Set up local variables for use in loops
-				let cam,dynPointX,dynPointY,dyn,stat,plat,key,index,colliders,overlappers;
+				let cam,
+					dynPointX,dynPointY,dynPointYtop,dynPointYbottom,dyn,
+					otherDynPointX,otherDynPointY,otherDynPointYtop,otherDynPointYbottom,otherDyn,
+					stat,plat,key,index,
+					colliders,overlappers;
 				let scene = this.scene;
 				
 			//update the camera and it's bounds
@@ -701,7 +692,6 @@ class Pointline{
 			//  / __/ _ \| |  | |  |_ _/ __|_ _/ _ \| \| / __|
 			// | (_| (_) | |__| |__ | |\__ \| | (_) | .` \__ \
 			//  \___\___/|____|____|___|___/___\___/|_|\_|___/
-			
 				
 				
 				//world first
@@ -713,19 +703,19 @@ class Pointline{
 							dyn = this.worldCollider.dynamics[i];
 							
 							//so we're not adding up every time
-								dynPointX = dyn.x+dyn.body.pointOffset.x+(dyn.body.width*dyn.body.dirAdj); 	//WALLS USE THE WIDTH+POINT X VALUE TO CALCULATE COLLISION
+								dynPointX = dyn.x+dyn.body.pointOffset.x+(dyn.body.radius*dyn.body.dirAdj); 	//WALLS USE THE WIDTH+POINT X VALUE TO CALCULATE COLLISION
 								dynPointY = dyn.y+dyn.body.pointOffset.y;									//WALLS USE POINT Y VALUE
 							
 							//left
 								if (dynPointX < this.worldCollider.world.bottomLeft.x){
 									dyn.body.velocity.x = 0;
-									dyn.x = this.worldCollider.world.bottomLeft.x+dyn.body.pointOffset.x-(dyn.body.width*dyn.body.dirAdj);
+									dyn.x = this.worldCollider.world.bottomLeft.x+dyn.body.pointOffset.x-(dyn.body.radius*dyn.body.dirAdj);
 								}
 								
 							//right
 								if (dynPointX > this.worldCollider.world.bottomRight.x){
 									dyn.body.velocity.x = 0;
-									dyn.x = this.worldCollider.world.bottomRight.x+dyn.body.pointOffset.x-(dyn.body.width*dyn.body.dirAdj);
+									dyn.x = this.worldCollider.world.bottomRight.x+dyn.body.pointOffset.x-(dyn.body.radius*dyn.body.dirAdj);
 								}
 
 							//Up
@@ -747,7 +737,81 @@ class Pointline{
 				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// 
 				
 				
-				//ADD OVERLAPPERS HERE
+				//   _____   _____ ___ _      _   ___ ___ ___ ___  ___ 
+				//  / _ \ \ / / __| _ \ |    /_\ | _ \ _ \ __| _ \/ __|
+				// | (_) \ V /| _||   / |__ / _ \|  _/  _/ _||   /\__ \
+				//  \___/ \_/ |___|_|_\____/_/ \_\_| |_| |___|_|_\|___/
+				
+				
+					//write overlappers to local var, as "this" won't work in loop function
+					overlappers = this.overlappers;
+					
+					//loop over the sub objects within overlappers, by key
+					Object.keys(overlappers).forEach(function(key,index) {
+						
+						//easier to call upon variable
+						dyn = overlappers[key].dynamic;
+						dynPointX = dyn.x+dyn.body.pointOffset.x;
+						dynPointY = dyn.y+dyn.body.pointOffset.y;
+						
+						//loop  over grounds and slopes in group
+						for(var j=0; j < overlappers[key].otherDynamic.length; j++){
+							
+							//write static to local var
+							otherDyn = overlappers[key].otherDynamic[j];
+							otherDynPointX = otherDyn.x+otherDyn.body.pointOffset.x;
+							otherDynPointYbottom = otherDyn.y+otherDyn.body.pointOffset.y;
+							
+							//ignore this other dynamic?
+							if(
+								//other dyn off screen
+								(otherDynPointX-otherDyn.body.radius > cam.camRightBorderX) ||							//right
+								(otherDynPointX+otherDyn.body.radius < cam.camLeftBorderX) ||							//left
+								(otherDynPointYbottom < cam.camTopBorderY) ||											//top
+								(otherDynPointYbottom-otherDyn.body.height > cam.camBottomBorderY)						//bottom
+							){
+								continue;
+							}
+							
+							if(
+								(
+									(
+										dynPointX+dyn.body.radius > otherDynPointX-otherDyn.body.radius &&				//right border within other sprite bounds
+										dynPointX+dyn.body.radius < otherDynPointX+otherDyn.body.radius
+									) ||
+									(
+										dynPointX-dyn.body.radius > otherDynPointX-otherDyn.body.radius &&				//left border within other sprite bounds
+										dynPointX-dyn.body.radius < otherDynPointX+otherDyn.body.radius
+									) 
+								) &&
+								(
+									(
+										dynPointY < otherDynPointYbottom &&												//bottom border within other sprite bounds
+										dynPointY > otherDynPointYbottom-otherDyn.body.height
+									) ||
+									(
+										dynPointY-dyn.body.height < otherDynPointYbottom &&								//top border within other sprite bounds
+										dynPointY-dyn.body.height > otherDynPointYbottom-otherDyn.body.height
+									)
+								)
+							){
+								
+								//callback?
+									if (otherDyn.body.overlapCallback && typeof(otherDyn.body.overlapCallback) === "function") {
+										otherDyn.body.overlapCallback(dyn, otherDyn, scene);
+									}
+									
+								//stop checking overlaps?
+									if (otherDyn.body.breakOnOverlap){
+										break;
+									}
+								
+							}
+							
+						}
+						
+					});
+
 				
 				
 				////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// 
@@ -805,71 +869,80 @@ class Pointline{
 									if(stat.type == 1 || stat.type == 4){
 										
 										//are we on this line? (y = mx+b)
-										if(
-											dyn.body.velocity.y == 0 && 										//not moving up or down by gravity
-											dynPointY == stat.y1												//Does Y = ground.y?
-										){
-											dyn.body.onGround = true;											//Set onGround to allow skipping of all other grounds in loop
-											if(stat.type == 4){
-												dyn.body.onPlatform = true;
-												dyn.body.platformIndex = {key:key, index:j};
+											if(
+												dyn.body.velocity.y == 0 && 										//not moving up or down by gravity
+												dynPointY == stat.y1												//Does Y = ground.y?
+											){
+												if(!plat.isOverlapper){												//only apply collision if this line aint an overlapper
+													dyn.body.onGround = true;										//Set onGround to allow skipping of all other grounds in loop
+													if(stat.type == 4){
+														dyn.body.onPlatform = true;
+														dyn.body.platformIndex = {key:key, index:j};
+													}
+													dyn.body.velMult = stat.velMult;								//Set velMult to this ground.
+												}
+												break;
 											}
-											dyn.body.velMult = stat.velMult;									//Set velMult to this ground.
-											break;
-										}
 										
 										//moving down and collider is facing up
-										else if( 
-											( 
-												(dynPointY + (dyn.body.velocity.y*delta) ) > stat.y1	&&		//next frames position of point
-												(dynPointY - (dyn.body.velocity.y*delta*2) ) <= stat.y1	 		//2 frames in past position of point
-											)
-											&& stat.checkUp === true
-										){
-											
-											dyn.body.m = stat.m;
-											dyn.body.b = stat.b;
-											dyn.body.angle = stat.angle;
-											dyn.body.velMult = stat.velMult;									//set the current line equation from the line the player is on
-											
-											dyn.y = stat.y1-dyn.body.pointOffset.y;								//set dyn y position according to equation (i.e. snap to line) accounting for point offset/y = dyn.x*m + b
-											
-											dyn.body.velocity.y = 0; 											//as soon as we know we're on a ground platform, then set dynamic to on ground, and break from colliders
-											dyn.body.onGround = true;
-											
-											//on a platform?
-											if(stat.type == 4){
-												dyn.body.onPlatform = true;
-												dyn.body.platformIndex = {key:key, index:j};
-											}
-											
-											//callback?
-												if (stat.callback && typeof(stat.callback) === "function") {
-													stat.callback(dyn, scene);
+											else if( 
+												( 
+													(dynPointY + (dyn.body.velocity.y*delta) ) > stat.y1	&&		//next frames position of point
+													(dynPointY - (dyn.body.velocity.y*delta*2) ) <= stat.y1	 		//2 frames in past position of point
+												)
+												&& stat.checkUp === true
+											){
+												
+												if(!plat.isOverlapper){												//only apply collision if this line aint an overlapper
+												
+													dyn.body.m = stat.m;
+													dyn.body.b = stat.b;
+													dyn.body.angle = stat.angle;
+													dyn.body.velMult = stat.velMult;								//set the current line equation from the line the player is on
+													
+													dyn.y = stat.y1-dyn.body.pointOffset.y;							//set dyn y position according to equation (i.e. snap to line) accounting for point offset/y = dyn.x*m + b
+													
+													dyn.body.velocity.y = 0; 										//as soon as we know we're on a ground platform, then set dynamic to on ground, and break from colliders
+													dyn.body.onGround = true;
+													
+													//on a platform?
+													if(stat.type == 4){
+														dyn.body.onPlatform = true;
+														dyn.body.platformIndex = {key:key, index:j};
+													}
+													
 												}
-											
-											break;																//break because if colliding, no need to check anything else until next frame
-											
-										}
+												
+												//callback?
+													if (stat.callback && typeof(stat.callback) === "function") {
+														stat.callback(dyn, scene);
+													}
+												
+												break;																//break because if colliding, no need to check anything else until next frame
+												
+											}
 										
 										//moving up and collider is facing down.
-										else if(
-											( 
-												(dynPointY + (dyn.body.velocity.y*delta) ) < stat.y1			//next frames position of point
-												&& (dynPointY - (dyn.body.velocity.y*delta) ) >= stat.y1 		//last frames position of point
-											)
-											&& stat.checkDown === true 
-										){
-											dyn.body.velocity.y = 0;
-											dyn.body.onGround = false;
-											
-											//callback?
-												if (stat.callback && typeof(stat.callback) === "function") {
-													stat.callback(dyn, scene);
+											else if(
+												( 
+													( (dynPointY-dyn.body.height) + (dyn.body.velocity.y*delta) ) < stat.y1			//next frames position of point - height
+													&& ( (dynPointY-dyn.body.height) - (dyn.body.velocity.y*delta) ) >= stat.y1 	//last frames position of point
+												)
+												&& stat.checkDown === true 
+											){
+												
+												if(!plat.isOverlapper){												//only apply collision if this line aint an overlapper
+													dyn.body.velocity.y = 0;
+													dyn.body.onGround = false;
 												}
-											
-											break;																//break because if colliding, no need to check anything else until next frame
-										}
+													
+												//callback?
+													if (stat.callback && typeof(stat.callback) === "function") {
+														stat.callback(dyn, scene);
+													}
+												
+												break;																//break because if colliding, no need to check anything else until next frame
+											}
 										
 								//  ___ _    ___  ___ ___ ___ 
 								// / __| |  / _ \| _ \ __/ __|
@@ -880,65 +953,74 @@ class Pointline{
 									} else if (stat.type == 2){
 										
 										//are we on this line? (y = mx+b)
-										if(
-											dyn.body.velocity.y == 0 && 										//not moving up or down by gravity
-											(dynPointY.toFixed(5) == ((dynPointX*stat.m)+stat.b).toFixed(5))	//Does y = mx+b?
-										){
-											dyn.body.onGround = true;											//Set onGround to allow skipping of all other grounds in loop
-											dyn.body.velMult = stat.velMult;									//Set velMult to this ground.
-											break;
-										}
+											if(
+												dyn.body.velocity.y == 0 && 										//not moving up or down by gravity
+												(dynPointY.toFixed(5) == ((dynPointX*stat.m)+stat.b).toFixed(5))	//Does y = mx+b?
+											){
+												
+												if(!plat.isOverlapper){												//only apply collision if this line aint an overlapper
+													dyn.body.onGround = true;										//Set onGround to allow skipping of all other grounds in loop
+													dyn.body.velMult = stat.velMult;								//Set velMult to this ground.
+												}
+												break;
+											}
 										
 										//moving down and collider is facing up
-										else if( 
-											( 
-												(dynPointY + (dyn.body.velocity.y*delta) ) > (stat.m*(dynPointX+(dyn.body.velocity.x*delta)) )+stat.b 			//next frames position of point
-												&& (dynPointY - (dyn.body.velocity.y*delta*2) ) <= (stat.m*(dynPointX-(dyn.body.velocity.x*delta*2)) )+stat.b 	//2 frames in past position of point
-											)
-											&& stat.checkUp === true
-										){
-											
-											//set the current line equation from the line the player is on
-											dyn.body.m = stat.m;
-											dyn.body.b = stat.b;
-											dyn.body.angle = stat.angle;
-											dyn.body.velMult = stat.velMult;
-											
-											//y = dyn.x*m + b
-											//set dyn y position according to equation (i.e. snap to line) accounting for point offset
-											dyn.y = (dynPointX*dyn.body.m) + dyn.body.b - dyn.body.pointOffset.y;
-											
-											//as soon as we know we're on a ground platform, then set dynamic to on ground, and break from colliders
-											dyn.body.velocity.y = 0; 
-											dyn.body.onGround = true;
-											
-											//callback?
-												if (stat.callback && typeof(stat.callback) === "function") {
-													stat.callback(dyn, scene);
+											else if( 
+												( 
+													(dynPointY + (dyn.body.velocity.y*delta) ) > (stat.m*(dynPointX+(dyn.body.velocity.x*delta)) )+stat.b 			//next frames position of point
+													&& (dynPointY - (dyn.body.velocity.y*delta*2) ) <= (stat.m*(dynPointX-(dyn.body.velocity.x*delta*2)) )+stat.b 	//2 frames in past position of point
+												)
+												&& stat.checkUp === true
+											){
+												
+												if(!plat.isOverlapper){												//only apply collision if this line aint an overlapper
+												
+													//set the current line equation from the line the player is on
+													dyn.body.m = stat.m;
+													dyn.body.b = stat.b;
+													dyn.body.angle = stat.angle;
+													dyn.body.velMult = stat.velMult;
+													
+													//y = dyn.x*m + b
+													//set dyn y position according to equation (i.e. snap to line) accounting for point offset
+													dyn.y = (dynPointX*dyn.body.m) + dyn.body.b - dyn.body.pointOffset.y;
+													
+													//as soon as we know we're on a ground platform, then set dynamic to on ground, and break from colliders
+													dyn.body.velocity.y = 0; 
+													dyn.body.onGround = true;
 												}
 												
-											break;																//break because if colliding, no need to check anything else until next frame
-											
-										}
+												//callback?
+													if (stat.callback && typeof(stat.callback) === "function") {
+														stat.callback(dyn, scene);
+													}
+													
+												break;																//break because if colliding, no need to check anything else until next frame
+												
+											}
 										
 										//moving up and collider is facing down.
-										else if(
-											( 
-												(dynPointY + (dyn.body.velocity.y*delta) ) < (stat.m*dynPointX)+stat.b 		//next frames position of point
-												&& (dynPointY - (dyn.body.velocity.y*delta) ) >= (stat.m*dynPointX)+stat.b 	//last frames position of point
-											)
-											&& stat.checkDown === true 
-										){
-											dyn.body.velocity.y = 0;
-											dyn.body.onGround = false;
-											
-											//callback?
-												if (stat.callback && typeof(stat.callback) === "function") {
-													stat.callback(dyn, scene);
+											else if(
+												( 
+													( (dynPointY-dyn.body.height) + (dyn.body.velocity.y*delta) ) < (stat.m*dynPointX)+stat.b 		//next frames position of point
+													&& ( (dynPointY-dyn.body.height) - (dyn.body.velocity.y*delta) ) >= (stat.m*dynPointX)+stat.b 	//last frames position of point
+												)
+												&& stat.checkDown === true 
+											){
+												
+												if(!plat.isOverlapper){												//only apply collision if this line aint an overlapper
+													dyn.body.velocity.y = 0;
+													dyn.body.onGround = false;
 												}
 												
-											break;																//break because if colliding, no need to check anything else until next frame
-										}
+												//callback?
+													if (stat.callback && typeof(stat.callback) === "function") {
+														stat.callback(dyn, scene);
+													}
+													
+												break;																//break because if colliding, no need to check anything else until next frame
+											}
 										
 									}
 								
@@ -955,8 +1037,9 @@ class Pointline{
 								//write static to local var
 								stat = colliders[key].walls[k]; 
 							
-								dynPointX = dyn.x+dyn.body.pointOffset.x+(dyn.body.width*dyn.body.dirAdj); 		//WALLS USE THE WIDTH+POINT X VALUE TO CALCULATE COLLISION
-								dynPointY = dyn.y+dyn.body.pointOffset.y;										//WALLS USE POINT Y VALUE 
+								dynPointX = dyn.x+dyn.body.pointOffset.x+(dyn.body.radius*dyn.body.dirAdj); 	//WALLS USE THE WIDTH+POINT X VALUE TO CALCULATE COLLISION
+								dynPointYtop = dyn.y+dyn.body.pointOffset.y-dyn.body.height;					//WALLS USE POINT Y VALUE 
+								dynPointYbottom = dyn.y+dyn.body.pointOffset.y;									//WALLS USE POINT Y VALUE 
 								
 								//if the dynamic object point is outside of the y bounds of this line, don't bother testing.
 								if(
@@ -964,9 +1047,9 @@ class Pointline{
 									stat.x1 > cam.camRightBorderX ||											//Wall off screen to right
 									(stat.y1 < cam.camTopBorderY && stat.y2 < cam.camTopBorderY) ||				//Wall off screen upwards
 									(stat.y1 > cam.camBottomBorderY && stat.y2 > cam.camBottomBorderY) ||		//Wall off screen downwards
-									dynPointY > stat.y1 || 														//Dynamic Object below wall
-									dynPointY < stat.y2 ||														//Dynamic Object above wall
-									(dynPointY == stat.y2 && dyn.body.onGround) ||								//If dyn is on a slope where the top of this wall is on the same point as this wall, ignore to prevent dyn stopping
+									dynPointYtop > stat.y1 || 													//Dynamic Object below wall
+									dynPointYbottom < stat.y2 ||												//Dynamic Object above wall
+									(dynPointYbottom == stat.y2 && dyn.body.onGround) ||						//If dyn is on a slope where the top of this wall is on the same point as this wall, ignore to prevent dyn stopping
 									(stat.checkLeft === false && stat.checkRight === false)	||					//ground line isn't checking either direction
 									(dyn.body.velocity.x > 0 && stat.checkLeft === false) ||					//dyn moving right, line isn't checking left
 									(dyn.body.velocity.x < 0 && stat.checkRight === false)						//dyn moving left, line isn't checking right
@@ -994,10 +1077,14 @@ class Pointline{
 										(dynPointX + (dyn.body.velocity.x*delta) ) < stat.x1 					//next frame x position left side of wall
 										&& (dynPointX - (dyn.body.velocity.x*delta*2) ) >= stat.x1 				//2 frames in past x position right side of wall
 										&& stat.checkRight === true												//checking from right
+									) && 
+									(
+										(dynPointYtop > stat.y2 && dynPointYtop < stat.y1) ||					//either top or bottom point within wall bounds
+										(dynPointYbottom > stat.y2 && dynPointYbottom < stat.y1)
 									)
 								){
 									
-									dyn.x = stat.x1-(dyn.body.width*dyn.body.dirAdj);							//set X to wall - width - x point offset
+									dyn.x = stat.x1-(dyn.body.radius*dyn.body.dirAdj);							//set X to wall - radius - x point offset
 									dyn.body.velocity.x = 0; 													//stop all x velocity
 									dyn.body.onWall = true;														//set onWall to true
 									dyn.body.onStickyWall = stat.sticky;										//set sticky from wall
@@ -1015,7 +1102,7 @@ class Pointline{
 						}
 						
 				});
-				
+								
 			//  ___  ___ ___ _   _  ___ 
 			// |   \| __| _ ) | | |/ __|
 			// | |) | _|| _ \ |_| | (_ |
@@ -1062,15 +1149,31 @@ class Pointline{
 					}
 					
 					//dynamic on top
-					this.gfx.fillStyle(0xff9000, 1.0);
+					this.gfx.fillStyle(0x6de3cb, 1.0);
 					for(var i=0; i < this.dynamicObjects.length; i++){
 						let obj = this.dynamicObjects[i];
+						
+						//main point
 						this.debugPoint.x = obj.x+obj.body.pointOffset.x;
 						this.debugPoint.y = obj.y+obj.body.pointOffset.y;
 						this.gfx.fillPointShape(this.debugPoint, 2);
-						this.debugPoint.x = obj.x+obj.body.pointOffset.x+obj.body.width;
+						
+						//bottom right
+						this.debugPoint.x = obj.x+obj.body.pointOffset.x+obj.body.radius;
 						this.gfx.fillPointShape(this.debugPoint, 1);
-						this.debugPoint.x = obj.x+obj.body.pointOffset.x-obj.body.width;
+						
+						//bottom left
+						this.debugPoint.x = obj.x+obj.body.pointOffset.x-obj.body.radius;
+						this.gfx.fillPointShape(this.debugPoint, 1);
+						
+						//top right
+						this.debugPoint.x = obj.x+obj.body.pointOffset.x+obj.body.radius;
+						this.debugPoint.y = obj.y-obj.body.height;
+						this.gfx.fillPointShape(this.debugPoint, 1);
+						
+						//top left
+						this.debugPoint.x = obj.x+obj.body.pointOffset.x-obj.body.radius;
+						this.debugPoint.y = obj.y-obj.body.height;
 						this.gfx.fillPointShape(this.debugPoint, 1);
 					}
 					
