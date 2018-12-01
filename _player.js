@@ -77,7 +77,8 @@ class Player {
 					y:this.yInit,
 					canMove : true,										//are we applying movement to this body?
 					velocity : {x:0,y:0},								//body velocity
-					width : 2.5,										//width / 2 of body bounds
+					radius : 2.5,										//width
+					height:10,											//height of bounds
 					dirAdj : 1,											//left or right X
 					gravityFactor : 1,									//for scaling gravity for this body
 					pointOffset : {x:0, y:0},							//where is the "point" in relation to the origin of the sprite
@@ -123,6 +124,13 @@ class Player {
 				
 			return false;
 			
+		}
+		
+		backToStart()
+		{
+			this.sprite.x = this.xInit;
+			this.sprite.y = this.yInit;
+			this.sprite.body.onGround = false;
 		}
 	
 	//movement functions
